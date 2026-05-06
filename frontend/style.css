@@ -1,0 +1,46 @@
+/*====================================================================
+   PREMIUM CSS – dark glassmorphism + subtle micro‑animations
+====================================================================*/
+* { box-sizing:border-box; margin:0; padding:0; font-family:'Inter',sans-serif; }
+body {
+    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+    color:#ececec;
+    min-height:100vh;
+    display:flex; flex-direction:column; align-items:center;
+    padding:2rem;
+}
+header { margin-bottom:2rem; }
+header h1 {
+    font-size:2rem;
+    background: rgba(255,255,255,0.1);
+    padding:.6rem 1.2rem;
+    border-radius:12px;
+    backdrop-filter: blur(8px);
+}
+.card {
+    background: rgba(255,255,255,0.07);
+    border-radius:12px;
+    padding:1.5rem;
+    margin:1rem;
+    width:320px;
+    backdrop-filter: blur(6px);
+    box-shadow:0 4px 12px rgba(0,0,0,.3);
+    transition:transform .2s, box-shadow .2s;
+}
+.card:hover { transform:translateY(-4px); box-shadow:0 8px 20px rgba(0,0,0,.4); }
+h2 { margin-bottom:.8rem; font-size:1.2rem; color:#ffd966; }
+input, select, button {
+    width:100%; padding:.5rem; margin:.4rem 0; border:none;
+    border-radius:6px; font-size:.95rem;
+}
+input, select { background:#1e2a32; color:#fff; }
+button {
+    background:#ffd966; color:#1e2a32; cursor:pointer;
+    transition:background .2s;
+}
+button:hover { background:#ffea8a; }
+table { width:100%; border-collapse:collapse; margin-top:.5rem; }
+th, td { padding:.4rem; text-align:left; }
+th { background:rgba(255,255,255,.15); }
+tbody tr:nth-child(even){background:rgba(255,255,255,.05);} 
+tbody tr:hover{background:rgba(255,255,255,.12);}
