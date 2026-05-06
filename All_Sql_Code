@@ -1,0 +1,192 @@
+/*====================================================================
+   BANK DEMO MASTER SCRIPT – upload this ONE file to Oracle Live SQL
+   It contains the full schema, sample data, procedures, and demo queries.
+   Run the script from top to bottom; each section is clearly marked.
+====================================================================*/
+
+/*====================================================================
+   1️⃣ SCHEMA – tables, sequences, constraints, indexes
+====================================================================*/
+-- Drop existing objects (optional reset)
+DROP TABLE transactions CASCADE CONSTRAINTS;
+DROP TABLE accounts    CASCADE CONSTRAINTS;
+DROP TABLE customers   CASCADE CONSTRAINTS;
+DROP SEQUENCE seq_customer_id;
+DROP SEQUENCE seq_account_id;
+DROP SEQUENCE seq_transaction_id;
+
+-- Sequences for surrogate primary keys
+CREATE SEQUENCE seq_customer_id   START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE seq_account_id    START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+CREATE SEQUENCE seq_transaction_id START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+
+-- Customers table
+CREATE TABLE customers (
+    customer_id NUMBER PRIMARY KEY,
+    name        VARCHAR2(100) NOT NULL,
+    email       VARCHAR2(150) NOT NULL UNIQUE,
+    phone       VARCHAR2(20)  NOT NULL,
+    created_at  DATE DEFAULT SYSDATE
+);
+
+-- Accounts table
+CREATE TABLE accounts (
+    account_id   NUMBER PRIMARY KEY,
+    customer_id  NUMBER NOT NULL,
+    account_type VARCHAR2(30) CHECK (account_type IN ('SAVINGS','CHECKING')) NOT NULL,
+    balance      NUMBER(15,2) DEFAULT 0 CONSTRAINT chk_balance_nonneg CHECK (balance >= 0),
+    opened_at    DATE DEFAULT SYSDATE,
+    CONSTRAINT fk_accounts_customer FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE
+);
+
+-- Transactions table
+CREATE TABLE transactions (
+    transaction_id   NUMBER PRIMARY KEY,
+    account_id       NUMBER NOT NULL,
+    transaction_type VARCHAR2(20) CHECK (transaction_type IN ('DEPOSIT','WITHDRAW')) NOT NULL,
+    amount           NUMBER(15,2) NOT NULL,
+    transaction_date DATE DEFAULT SYSDATE,
+    CONSTRAINT fk_tx_account FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
+);
+
+-- Indexes for performance
+CREATE INDEX idx_accounts_customer ON accounts(customer_id);
+CREATE INDEX idx_tx_account_date    ON transactions(account_id, transaction_date);
+
+/*====================================================================
+   2️⃣ SAMPLE DATA – insert demo customers, accounts, transactions
+====================================================================*/
+INSERT INTO customers (customer_id, name, email, phone)
+VALUES (seq_customer_id.NEXTVAL, 'Alice Johnson',  'alice.johnson@example.com',  '555-0101');
+INSERT INTO customers (customer_id, name, email, phone)
+VALUES (seq_customer_id.NEXTVAL, 'Bob Martinez',   'bob.martinez@example.com',   '555-0102');
+INSERT INTO customers (customer_id, name, email, phone)
+VALUES (seq_customer_id.NEXTVAL, 'Carol Singh',    'carol.singh@example.com',    '555-0103');
+
+INSERT INTO accounts (account_id, customer_id, account_type, balance)
+VALUES (seq_account_id.NEXTVAL,
+        (SELECT customer_id FROM customers WHERE email='alice.johnson@example.com'),
+        'SAVINGS', 1500);
+INSERT INTO accounts (account_id, customer_id, account_type, balance)
+VALUES (seq_account_id.NEXTVAL,
+        (SELECT customer_id FROM customers WHERE email='bob.martinez@example.com'),
+        'CHECKING', 2500);
+INSERT INTO accounts (account_id, customer_id, account_type, balance)
+VALUES (seq_account_id.NEXTVAL,
+        (SELECT customer_id FROM customers WHERE email='bob.martinez@example.com'),
+        'SAVINGS', 800);
+INSERT INTO accounts (account_id, customer_id, account_type, balance)
+VALUES (seq_account_id.NEXTVAL,
+        (SELECT customer_id FROM customers WHERE email='carol.singh@example.com'),
+        'CHECKING', 1200);
+
+DECLARE
+    v_acc_id NUMBER;
+BEGIN
+    SELECT account_id INTO v_acc_id FROM accounts
+    WHERE customer_id = (SELECT customer_id FROM customers WHERE email='alice.johnson@example.com')
+      AND account_type='SAVINGS';
+    INSERT INTO transactions (transaction_id, account_id, transaction_type, amount)
+    VALUES (seq_transaction_id.NEXTVAL, v_acc_id, 'DEPOSIT', 500);
+
+    SELECT account_id INTO v_acc_id FROM accounts
+    WHERE customer_id = (SELECT customer_id FROM customers WHERE email='bob.martinez@example.com')
+      AND account_type='CHECKING';
+    INSERT INTO transactions (transaction_id, account_id, transaction_type, amount)
+    VALUES (seq_transaction_id.NEXTVAL, v_acc_id, 'WITHDRAW', 200);
+
+    SELECT account_id INTO v_acc_id FROM accounts
+    WHERE customer_id = (SELECT customer_id FROM customers WHERE email='carol.singh@example.com')
+      AND account_type='CHECKING';
+    INSERT INTO transactions (transaction_id, account_id, transaction_type, amount)
+    VALUES (seq_transaction_id.NEXTVAL, v_acc_id, 'DEPOSIT', 300);
+END;
+/
+COMMIT;
+
+/*====================================================================
+   3️⃣ PROCEDURES – deposit_money & withdraw_money
+====================================================================*/
+CREATE OR REPLACE PROCEDURE deposit_money (
+    p_account_id IN NUMBER,
+    p_amount     IN NUMBER
+) IS
+    v_new_balance NUMBER;
+BEGIN
+    IF p_amount <= 0 THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Deposit amount must be positive.');
+    END IF;
+    SELECT balance + p_amount INTO v_new_balance FROM accounts WHERE account_id = p_account_id FOR UPDATE;
+    UPDATE accounts SET balance = v_new_balance WHERE account_id = p_account_id;
+    INSERT INTO transactions (transaction_id, account_id, transaction_type, amount)
+    VALUES (seq_transaction_id.NEXTVAL, p_account_id, 'DEPOSIT', p_amount);
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
+END deposit_money;
+/
+
+CREATE OR REPLACE PROCEDURE withdraw_money (
+    p_account_id IN NUMBER,
+    p_amount     IN NUMBER
+) IS
+    v_current_balance NUMBER;
+    v_new_balance     NUMBER;
+BEGIN
+    IF p_amount <= 0 THEN
+        RAISE_APPLICATION_ERROR(-20002, 'Withdrawal amount must be positive.');
+    END IF;
+    SELECT balance INTO v_current_balance FROM accounts WHERE account_id = p_account_id FOR UPDATE;
+    IF v_current_balance < p_amount THEN
+        RAISE_APPLICATION_ERROR(-20003, 'Insufficient funds. Available: '||v_current_balance);
+    END IF;
+    v_new_balance := v_current_balance - p_amount;
+    UPDATE accounts SET balance = v_new_balance WHERE account_id = p_account_id;
+    INSERT INTO transactions (transaction_id, account_id, transaction_type, amount)
+    VALUES (seq_transaction_id.NEXTVAL, p_account_id, 'WITHDRAW', p_amount);
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
+END withdraw_money;
+/
+
+/*====================================================================
+   4️⃣ QUERIES – core SELECTs (joins, aggregates, history)
+====================================================================*/
+SELECT c.customer_id,
+       c.name,
+       c.email,
+       SUM(a.balance) AS total_balance
+FROM   customers c
+JOIN   accounts a ON a.customer_id = c.customer_id
+GROUP BY c.customer_id, c.name, c.email
+ORDER BY total_balance DESC;
+
+SELECT t.transaction_id,
+       t.transaction_type,
+       t.amount,
+       TO_CHAR(t.transaction_date, 'YYYY-MM-DD HH24:MI') AS when_it_happened
+FROM   transactions t
+WHERE  t.account_id = :p_account_id   -- replace with a real ID when testing
+ORDER BY t.transaction_date DESC;
+
+SELECT c.name,
+       COUNT(a.account_id) AS num_accounts
+FROM   customers c
+LEFT JOIN accounts a ON a.customer_id = c.customer_id
+GROUP BY c.name
+ORDER BY num_accounts DESC;
+
+/*====================================================================
+   END OF MASTER SCRIPT – you can now run any test block below.
+====================================================================*/
+
+-- Example test (optional):
+-- BEGIN
+--   deposit_money(p_account_id => 101, p_amount => 250);
+-- END;
+-- /
